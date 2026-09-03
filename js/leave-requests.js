@@ -1,18 +1,17 @@
 // ─────────────────────────────────────────────────────────────
 // js/leave-requests.js — หน้าที่ 1 รายการใบลา
-// สัปดาห์ที่ 6 (ต้นสัปดาห์): อ่านจากข้อมูลปลอมใน js/data.js
+// อ่านข้อมูลจริงจาก Firestore (collection leaveRequests) แบบ real-time
 // ─────────────────────────────────────────────────────────────
 
-(function () {
-  var กล่อง = document.getElementById("ผลลัพธ์");
+import { db } from "./firebase-config.js";
+import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-  // ใบลาจากข้อมูลปลอม บวกกับใบที่เพิ่งยื่นในหน้าถัดไป
-  // (สัปดาห์นี้ยังไม่ต่อฐานข้อมูล ใบที่ยื่นใหม่จึงหายเมื่อปิดเบราว์เซอร์)
-  var ใบลาที่ยื่นใหม่ = JSON.parse(sessionStorage.getItem("ใบลาที่ยื่นใหม่") || "[]");
-  var ใบลาทั้งหมด = window.LEAVE_DATA.leaveRequests.concat(ใบลาที่ยื่นใหม่);
+var กล่อง = document.getElementById("ผลลัพธ์");
+var สถานะที่กรอง = ค่าจากURL("status");
 
-  // ถ้ามีสถานะติดมาท้าย URL ให้กรองเฉพาะสถานะนั้น
-  var สถานะที่กรอง = ค่าจากURL("status");
+onSnapshot(collection(db, "leaveRequests"), function (snapshot) {
+  var ใบลาทั้งหมด = snapshot.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+
   if (สถานะที่กรอง) {
     ใบลาทั้งหมด = ใบลาทั้งหมด.filter(function (ใบ) { return ใบ.status === สถานะที่กรอง; });
     document.querySelector(".subtitle").textContent =
@@ -20,41 +19,41 @@
   }
 
   แสดงตาราง(ใบลาทั้งหมด);
+});
 
-  function แสดงตาราง(รายการ) {
-    if (รายการ.length === 0) {
-      กล่อง.innerHTML = "<p>ยังไม่มีใบขอลาในระบบ</p>";
-      return;
-    }
-
-    var html =
-      "<table><thead><tr>" +
-      "<th>หัวข้อ</th>" +
-      "<th>ประเภทการลา</th>" +
-      "<th>สถานะ</th>" +
-      '<th class="hide-mobile">ผู้ขอลา</th>' +
-      '<th class="hide-mobile">วันที่ลา</th>' +
-      "</tr></thead><tbody>";
-
-    รายการ.forEach(function (ใบ) {
-      html +=
-        '<tr class="clickable" data-id="' + esc(ใบ.id) + '">' +
-        "<td>" + esc(ใบ.title) + "</td>" +
-        "<td>" + esc(ใบ.leaveTypeName) + "</td>" +
-        "<td>" + ป้ายสถานะ(ใบ.status) + "</td>" +
-        '<td class="hide-mobile">' + esc(ใบ.requesterName) + "</td>" +
-        '<td class="hide-mobile">' + esc(ใบ.startDate) + " ถึง " + esc(ใบ.endDate) + "</td>" +
-        "</tr>";
-    });
-
-    html += "</tbody></table>";
-    กล่อง.innerHTML = html;
-
-    // กดที่แถวไหน ไปหน้ารายละเอียดของใบนั้น
-    กล่อง.querySelectorAll("tr.clickable").forEach(function (แถว) {
-      แถว.addEventListener("click", function () {
-        location.href = "leave-request-detail.html?id=" + แถว.dataset.id;
-      });
-    });
+function แสดงตาราง(รายการ) {
+  if (รายการ.length === 0) {
+    กล่อง.innerHTML = "<p>ยังไม่มีใบขอลาในระบบ</p>";
+    return;
   }
-})();
+
+  var html =
+    "<table><thead><tr>" +
+    "<th>หัวข้อ</th>" +
+    "<th>ประเภทการลา</th>" +
+    "<th>สถานะ</th>" +
+    '<th class="hide-mobile">ผู้ขอลา</th>' +
+    '<th class="hide-mobile">วันที่ลา</th>' +
+    "</tr></thead><tbody>";
+
+  รายการ.forEach(function (ใบ) {
+    html +=
+      '<tr class="clickable" data-id="' + esc(ใบ.id) + '">' +
+      "<td>" + esc(ใบ.title) + "</td>" +
+      "<td>" + esc(ใบ.leaveTypeName) + "</td>" +
+      "<td>" + ป้ายสถานะ(ใบ.status) + "</td>" +
+      '<td class="hide-mobile">' + esc(ใบ.requesterName) + "</td>" +
+      '<td class="hide-mobile">' + esc(ใบ.startDate) + " ถึง " + esc(ใบ.endDate) + "</td>" +
+      "</tr>";
+  });
+
+  html += "</tbody></table>";
+  กล่อง.innerHTML = html;
+
+  // กดที่แถวไหน ไปหน้ารายละเอียดของใบนั้น
+  กล่อง.querySelectorAll("tr.clickable").forEach(function (แถว) {
+    แถว.addEventListener("click", function () {
+      location.href = "leave-request-detail.html?id=" + แถว.dataset.id;
+    });
+  });
+}
