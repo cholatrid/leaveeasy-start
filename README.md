@@ -1,5 +1,8 @@
 # 🔧 LeaveEasy — จุดเริ่มต้นของใบงาน
 
+🌐 **เว็บออนไลน์:** https://leaveeasy-chonlatrid.web.app
+📋 **ผลตรวจโค้ด:** [review-notes.md](review-notes.md) · **งานที่เหลือ:** [BACKLOG.md](BACKLOG.md)
+
 **ผู้จัดทำ:** chonlatrid
 
 **ADT-RAISE Non-Degree Batch 2 · Module 2: MVP-Ready** (สัปดาห์ที่ 6–9)
