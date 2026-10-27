@@ -3,11 +3,12 @@
 // อ่านใบลา + ความเห็นจาก Firestore แบบ real-time · อนุมัติ/ไม่อนุมัติ/เขียนความเห็นเขียนจริง
 // ─────────────────────────────────────────────────────────────
 
-import { db } from "./firebase-config.js";
+import { db, auth } from "./firebase-config.js";
 import {
-  doc, onSnapshot, updateDoc,
+  doc, onSnapshot, updateDoc, deleteDoc,
   collection, addDoc
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { เรียกAI } from "./ai.js";
 
 var รหัสใบลา = ค่าจากURL("id");
 var กล่องใบลา = document.getElementById("กล่องใบลา");
@@ -53,12 +54,26 @@ function วาดใบลา() {
     return '<div class="field-row"><span class="k">' + r[0] + "</span><span>" + r[1] + "</span></div>";
   }).join("");
 
-  // ปุ่มอนุมัติ / ไม่อนุมัติ ขึ้นเฉพาะใบที่ยังรอพิจารณา
+  // สรุปจาก AI (ถ้ามี) — ไว้อ่านประกอบการตัดสินใจเท่านั้น ไม่ได้ตัดสินแทนคน
+  if (ใบ.aiSuggestion) {
+    html +=
+      '<div class="field-row"><span class="k">✨ สรุปโดย AI</span><span>' + esc(ใบ.aiSuggestion) +
+      "</span></div>";
+  }
+
+  // ปุ่มอนุมัติ / ไม่อนุมัติ / ลบ / สรุปด้วย AI ขึ้นเฉพาะใบที่ยังรอพิจารณา
   if (ใบ.status === "รอพิจารณา") {
     html +=
       '<div class="btn-row">' +
       '<button type="button" class="btn-ok" id="ปุ่มอนุมัติ">อนุมัติ</button>' +
       '<button type="button" class="btn-danger" id="ปุ่มไม่อนุมัติ">ไม่อนุมัติ</button>' +
+      "</div>" +
+      '<div class="btn-row">' +
+      '<button type="button" id="ปุ่มAIสรุป">🤖 ให้ AI ช่วยสรุปใบลานี้</button>' +
+      "</div>" +
+      '<div id="ข้อความเตือนAI" class="alert alert-error hidden"></div>' +
+      '<div class="btn-row">' +
+      '<button type="button" class="btn-danger" id="ปุ่มลบ">ลบใบลานี้</button>' +
       "</div>";
   } else {
     html += '<p class="hint">ใบนี้พิจารณาแล้ว จึงเปลี่ยนสถานะต่อไม่ได้</p>';
@@ -69,7 +84,54 @@ function วาดใบลา() {
   if (ใบ.status === "รอพิจารณา") {
     document.getElementById("ปุ่มอนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("อนุมัติ"); });
     document.getElementById("ปุ่มไม่อนุมัติ").addEventListener("click", function () { เปลี่ยนสถานะ("ไม่อนุมัติ"); });
+    document.getElementById("ปุ่มAIสรุป").addEventListener("click", ให้AIสรุป);
+    document.getElementById("ปุ่มลบ").addEventListener("click", ลบใบลา);
   }
+}
+
+// ── ปุ่ม AI ระดับ 2 (agentic): อ่านใบลา+ความเห็น → สรุปให้หัวหน้าอ่าน → เขียนผลกลับ + จด aiLog ──
+function ให้AIสรุป() {
+  var ปุ่ม = document.getElementById("ปุ่มAIสรุป");
+  var กล่องเตือนAI = document.getElementById("ข้อความเตือนAI");
+  กล่องเตือนAI.classList.add("hidden");
+
+  var ข้อความความเห็น = ความเห็น.length === 0
+    ? "(ยังไม่มีความเห็น)"
+    : ความเห็น.map(function (c) { return "- " + c.authorName + ": " + c.message; }).join("\n");
+
+  var ข้อมูลนำเข้า =
+    "หัวข้อ: " + ใบ.title + "\n" +
+    "เหตุผล: " + ใบ.reason + "\n" +
+    "ประเภทการลา: " + ใบ.leaveTypeName + "\n" +
+    "วันที่ลา: " + ใบ.startDate + " ถึง " + ใบ.endDate + "\n" +
+    "ผู้ขอลา: " + ใบ.requesterName + "\n" +
+    "ความเห็นที่มีอยู่แล้ว:\n" + ข้อความความเห็น;
+
+  ปุ่ม.disabled = true;
+  ปุ่ม.textContent = "🤖 กำลังสรุป...";
+
+  เรียกAI(
+    "คุณช่วยสรุปใบขอลาให้หัวหน้าอ่านก่อนตัดสินใจอนุมัติ ตอบเป็นภาษาไทย ไม่เกิน 3 ประโยค " +
+      "สรุปสั้น กระชับ ไม่ต้องขึ้นต้นด้วยคำทักทาย ห้ามแนะนำว่าควรอนุมัติหรือไม่อนุมัติ " +
+      "หน้าที่ของคุณคือสรุปข้อมูลให้อ่านง่ายเท่านั้น การตัดสินใจเป็นของคนที่มีสิทธิ์อนุมัติ",
+    ข้อมูลนำเข้า
+  ).then(function (สรุป) {
+    return updateDoc(ใบRef, { aiSuggestion: สรุป }).then(function () {
+      return addDoc(collection(ใบRef, "aiLog"), {
+        input: ข้อมูลนำเข้า,
+        output: สรุป,
+        createdAt: เวลาตอนนี้()
+      });
+    });
+  }).catch(function (err) {
+    กล่องเตือนAI.textContent = "⚠️ " + err.message;
+    กล่องเตือนAI.classList.remove("hidden");
+  }).finally(function () {
+    if (ปุ่ม) {
+      ปุ่ม.disabled = false;
+      ปุ่ม.textContent = "🤖 ให้ AI ช่วยสรุปใบลานี้";
+    }
+  });
 }
 
 // ── เปลี่ยนสถานะ (แก้เฉพาะ field status ห้ามเขียนทับช่องอื่น) ──
@@ -81,6 +143,16 @@ function เปลี่ยนสถานะ(สถานะใหม่) {
   }
   updateDoc(ใบRef, { status: สถานะใหม่ }).catch(function (err) {
     alert("เปลี่ยนสถานะไม่สำเร็จ: " + err.message);
+  });
+}
+
+// ── ลบใบลา (เฉพาะใบที่ยังรอพิจารณา) — ต้องถามยืนยันก่อนทุกครั้ง ──
+function ลบใบลา() {
+  if (!confirm('ยืนยันการลบใบลา "' + ใบ.title + '" หรือไม่ — เมื่อลบแล้วกู้คืนไม่ได้')) return;
+  deleteDoc(ใบRef).then(function () {
+    location.href = "leave-requests.html";
+  }).catch(function (err) {
+    alert("ลบไม่สำเร็จ: " + err.message);
   });
 }
 
@@ -113,9 +185,15 @@ function ส่งความเห็น() {
   }
   เตือน.classList.add("hidden");
 
-  // สัปดาห์นี้ยังไม่มีล็อกอิน จึงสมมติว่าผู้เขียนคือ สมหญิง รักงาน
+  var ผู้ใช้ = auth.currentUser;
+  if (!ผู้ใช้) {
+    เตือน.textContent = "⚠️ กรุณาเข้าสู่ระบบก่อนเขียนความเห็น";
+    เตือน.classList.remove("hidden");
+    return;
+  }
+
   addDoc(collection(ใบRef, "approvals"), {
-    authorId: "u002", authorName: "สมหญิง รักงาน",
+    authorId: ผู้ใช้.uid, authorName: ผู้ใช้.displayName || ผู้ใช้.email,
     message: ข้อความ,
     createdAt: เวลาตอนนี้()
   }).then(function () {

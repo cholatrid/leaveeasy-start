@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="js/util.js" defer></script>
   <script src="js/nav.js" defer></script>
+  <script type="module" src="js/auth.js"></script>
   <script type="module" src="js/new-leave-request.js"></script>
 </head>
 <body>
@@ -30,6 +31,11 @@
         <select id="leaveTypeId">
           <option value="">— เลือกประเภทการลา —</option>
         </select>
+        <div class="btn-row">
+          <button type="button" id="ปุ่มAIจัดประเภท">🤖 ให้ AI ช่วยจัดประเภทการลา</button>
+        </div>
+        <p id="ป้ายAIจัดประเภท" class="hint hidden">✨ ข้อเสนอจาก AI — โปรดตรวจสอบก่อนยืนยัน (แก้เองได้เสมอ)</p>
+        <div id="ข้อความเตือนAI" class="alert alert-error hidden"></div>
 
         <label for="startDate">วันที่เริ่มลา</label>
         <input type="date" id="startDate">

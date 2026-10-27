@@ -30,3 +30,19 @@ function เวลาตอนนี้() {
 function ค่าจากURL(ชื่อ) {
   return new URLSearchParams(location.search).get(ชื่อ) || "";
 }
+
+// แปลรหัส error ของ Firebase Authentication ให้เป็นข้อความไทยอ่านง่าย
+// ใช้ร่วมกันทั้งหน้าสมัครสมาชิกและหน้าล็อกอิน
+function ข้อความError(err) {
+  var รหัส = err && err.code;
+  var ตาราง = {
+    "auth/email-already-in-use": "อีเมลนี้มีบัญชีอยู่แล้ว — ลองเข้าสู่ระบบแทน",
+    "auth/invalid-email": "รูปแบบอีเมลไม่ถูกต้อง",
+    "auth/weak-password": "รหัสผ่านสั้นเกินไป — ต้องมีอย่างน้อย 6 ตัวอักษร",
+    "auth/user-not-found": "ไม่พบบัญชีที่ใช้อีเมลนี้",
+    "auth/wrong-password": "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
+    "auth/invalid-credential": "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
+    "auth/too-many-requests": "ลองผิดหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่"
+  };
+  return ตาราง[รหัส] || ("เกิดข้อผิดพลาด: " + (err && err.message ? err.message : "ไม่ทราบสาเหตุ"));
+}

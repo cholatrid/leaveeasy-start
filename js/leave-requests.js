@@ -3,22 +3,39 @@
 // อ่านข้อมูลจริงจาก Firestore (collection leaveRequests) แบบ real-time
 // ─────────────────────────────────────────────────────────────
 
-import { db } from "./firebase-config.js";
-import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { db, auth } from "./firebase-config.js";
+import {
+  collection, onSnapshot, doc, getDoc, query, where
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 
 var กล่อง = document.getElementById("ผลลัพธ์");
 var สถานะที่กรอง = ค่าจากURL("status");
 
-onSnapshot(collection(db, "leaveRequests"), function (snapshot) {
-  var ใบลาทั้งหมด = snapshot.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+// รอให้รู้ว่าใครล็อกอินอยู่ก่อน ถึงจะรู้ว่าต้อง query แบบไหน — กฎเฝ้าข้อมูลอนุญาตให้พนักงาน
+// อ่านได้เฉพาะใบของตัวเอง ถ้า query ทั้ง collection แบบไม่กรองจะโดนปฏิเสธทั้งก้อน (ไม่ใช่แค่กรองผล)
+onAuthStateChanged(auth, function (ผู้ใช้) {
+  if (!ผู้ใช้) return; // js/auth.js จะ redirect ไป login.html ให้เองอยู่แล้ว
 
-  if (สถานะที่กรอง) {
-    ใบลาทั้งหมด = ใบลาทั้งหมด.filter(function (ใบ) { return ใบ.status === สถานะที่กรอง; });
-    document.querySelector(".subtitle").textContent =
-      "กำลังแสดงเฉพาะใบลาที่สถานะ " + สถานะที่กรอง + " · กดเมนู รายการใบลา เพื่อดูทั้งหมด";
-  }
+  getDoc(doc(db, "users", ผู้ใช้.uid)).then(function (snap) {
+    var บทบาท = snap.exists() ? snap.data().role : "employee";
+    var เห็นทุกใบ = บทบาท === "manager" || บทบาท === "hr";
+    var คิวรี = เห็นทุกใบ
+      ? collection(db, "leaveRequests")
+      : query(collection(db, "leaveRequests"), where("requesterId", "==", ผู้ใช้.uid));
 
-  แสดงตาราง(ใบลาทั้งหมด);
+    onSnapshot(คิวรี, function (snapshot) {
+      var ใบลาทั้งหมด = snapshot.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+
+      if (สถานะที่กรอง) {
+        ใบลาทั้งหมด = ใบลาทั้งหมด.filter(function (ใบ) { return ใบ.status === สถานะที่กรอง; });
+        document.querySelector(".subtitle").textContent =
+          "กำลังแสดงเฉพาะใบลาที่สถานะ " + สถานะที่กรอง + " · กดเมนู รายการใบลา เพื่อดูทั้งหมด";
+      }
+
+      แสดงตาราง(ใบลาทั้งหมด);
+    });
+  });
 });
 
 function แสดงตาราง(รายการ) {

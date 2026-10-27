@@ -1,0 +1,130 @@
+// ─────────────────────────────────────────────────────────────
+// firestore.rules — กฎเฝ้าข้อมูลรายบทบาท (สัปดาห์ที่ 8, ตรงกับ ACL.md)
+//
+// ✅ กฎส่วน users / leaveTypes / leaveRequests / approvals: deploy แล้ว และ
+//    ทดสอบด้วยการสวมรอยจริงผ่าน (สมัคร 2 บัญชี ยืนยันว่าเห็นเฉพาะใบของตัวเอง)
+// ⚠️ กฎส่วน aiSuggestion / aiLog (เพิ่มใหม่): ยังไม่ได้ deploy — ต้องนำไป publish เพิ่ม:
+//    Firebase Console → โปรเจกต์ leaveeasy-chonlatrid → Firestore Database →
+//    แท็บ Rules → วางเนื้อหาไฟล์นี้ทับของเดิมทั้งไฟล์ → Publish
+//    (หรือ `firebase deploy --only firestore:rules` ถ้ามี Firebase CLI)
+//
+// หมายเหตุภาษา: ไฟล์นี้ใช้ชื่อฟังก์ชัน/ตัวแปรเป็นภาษาอังกฤษ ต่างจากไฟล์ .js อื่นในโปรเจกต์
+// ที่ตั้งใจใช้ชื่อภาษาไทย — เพราะภาษา Firestore Rules ไม่รองรับตัวอักษรที่ไม่ใช่ ASCII
+// ในชื่อฟังก์ชัน/ตัวแปร (ต่างจาก JavaScript ปกติ)
+// ─────────────────────────────────────────────────────────────
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myRole() {
+      // อ่าน role ของคนที่ล็อกอินอยู่จาก users/{uid} ของตัวเอง
+      // ถ้ายังไม่มีไฟล์ users/{uid} (เช่น สมัครไม่สำเร็จกลางคัน) get() จะ error
+      // ซึ่งทำให้กฎที่เรียกใช้ deny โดยอัตโนมัติ — ปลอดภัยไว้ก่อน (fail closed)
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isManagerOrHr() {
+      return isSignedIn() && (myRole() == 'manager' || myRole() == 'hr');
+    }
+
+    function isHr() {
+      return isSignedIn() && myRole() == 'hr';
+    }
+
+    // ── users/{uid} — โปรไฟล์ผู้ใช้ ──
+    match /users/{uid} {
+      // เจ้าของอ่านโปรไฟล์ตัวเองได้เสมอ · หัวหน้า/ฝ่ายบุคคลอ่านของใครก็ได้ (ต้องใช้แสดงชื่อ/จัดการ)
+      allow read: if isSignedIn() && (request.auth.uid == uid || isManagerOrHr());
+
+      // สมัครสมาชิกได้เฉพาะไฟล์ของตัวเอง และบังคับ role เริ่มต้นเป็น employee เสมอ
+      // (กันคนสมัครแล้วตั้ง role ตัวเองเป็น hr ตั้งแต่ต้น)
+      allow create: if request.auth.uid == uid && request.resource.data.role == 'employee';
+
+      // ยังไม่มีฟีเจอร์แก้ไข/ลบโปรไฟล์ผู้ใช้ในแอปตอนนี้ — ปิดไว้ก่อนทั้งหมด
+      allow update, delete: if false;
+    }
+
+    // ── leaveTypes/{id} — ประเภทการลา ──
+    match /leaveTypes/{typeId} {
+      allow read: if isSignedIn();               // ทุกบทบาทต้องอ่านได้ (ใช้ในฟอร์มยื่นใบลา)
+      allow write: if isHr();                     // เพิ่ม/แก้/ลบ เฉพาะฝ่ายบุคคล
+    }
+
+    // ── leaveRequests/{id} — ใบขอลา ──
+    match /leaveRequests/{requestId} {
+
+      // เจ้าของอ่านใบของตัวเองได้ · หัวหน้า/ฝ่ายบุคคลอ่านได้ทุกใบ
+      allow read: if isSignedIn() &&
+        (resource.data.requesterId == request.auth.uid || isManagerOrHr());
+
+      // ยื่นใบใหม่ได้ทุกบทบาทที่ล็อกอินอยู่ แต่ requesterId ต้องเป็นตัวเอง
+      // และสถานะเริ่มต้นต้องเป็น รอพิจารณา เท่านั้น (ห้ามยื่นแล้วตั้งสถานะเองว่าอนุมัติ)
+      allow create: if isSignedIn() &&
+        request.resource.data.requesterId == request.auth.uid &&
+        request.resource.data.status == 'รอพิจารณา';
+
+      // เปลี่ยนสถานะได้เฉพาะหัวหน้า/ฝ่ายบุคคล จากรอพิจารณา → อนุมัติ/ไม่อนุมัติ เท่านั้น
+      // (ทางเดียว ห้ามย้อนกลับ) และต้องแก้เฉพาะช่อง status ห้ามแตะช่องอื่น (ตรงสเปค §6)
+      // 📌 ยังไม่รวมสิทธิ์ "ฝ่ายบุคคลกำหนดผู้อนุมัติ" เพราะฟีเจอร์นั้นยังไม่มีในแอปตอนนี้
+      //    ถ้าจะเพิ่มทีหลัง ต้องมาขยายเงื่อนไข hasOnly() ตรงนี้ด้วย
+      allow update: if isManagerOrHr() &&
+        resource.data.status == 'รอพิจารณา' &&
+        request.resource.data.status in ['อนุมัติ', 'ไม่อนุมัติ'] &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+
+      // ปุ่มผู้ช่วย AI ระดับ 2 (สัปดาห์ที่ 8) — เขียนสรุปกลับลงช่อง aiSuggestion เท่านั้น
+      // แยกจาก allow update ด้านบนเพราะเป็นช่องคนละชุด (สถานะจริงยังต้องรอคนกดยืนยันเสมอ)
+      allow update: if isManagerOrHr() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aiSuggestion']);
+
+      // ลบได้: เจ้าของลบใบของตัวเองที่ยังรอพิจารณาเท่านั้น · ฝ่ายบุคคลลบใบไหนก็ได้ (ตาม ACL.md
+      // ที่ระบุว่าฝ่ายบุคคลไม่มีข้อจำกัด) · หัวหน้าลบไม่ได้เลย (ACL.md ไม่ได้ให้สิทธิ์นี้)
+      allow delete: if isSignedIn() &&
+        ((resource.data.requesterId == request.auth.uid && resource.data.status == 'รอพิจารณา')
+         || isHr());
+
+      // ── leaveRequests/{id}/approvals/{id} — ความเห็นการอนุมัติ (โฟลเดอร์ย่อย) ──
+      match /approvals/{approvalId} {
+        function canSeeParentRequest() {
+          return get(/databases/$(database)/documents/leaveRequests/$(requestId)).data.requesterId
+                   == request.auth.uid || isManagerOrHr();
+        }
+
+        // อ่านความเห็นได้ตามสิทธิ์เดียวกับการอ่านใบลาแม่
+        allow read: if isSignedIn() && canSeeParentRequest();
+
+        // เขียนความเห็นได้ตามสิทธิ์เดียวกับการอ่านใบลาแม่ และ authorId ต้องเป็นตัวเองเท่านั้น
+        allow create: if isSignedIn() && canSeeParentRequest() &&
+          request.resource.data.authorId == request.auth.uid;
+
+        // ยังไม่มีฟีเจอร์แก้ไข/ลบความเห็นในแอปตอนนี้
+        allow update, delete: if false;
+      }
+
+      // ── leaveRequests/{id}/aiLog/{id} — ประวัติการเรียก AI สรุปใบลา (สัปดาห์ที่ 8) ──
+      match /aiLog/{logId} {
+        function canSeeParentRequestAI() {
+          return get(/databases/$(database)/documents/leaveRequests/$(requestId)).data.requesterId
+                   == request.auth.uid || isManagerOrHr();
+        }
+
+        // อ่านประวัติได้ตามสิทธิ์เดียวกับการอ่านใบลาแม่
+        allow read: if isSignedIn() && canSeeParentRequestAI();
+
+        // จดบันทึกได้เฉพาะตอนที่หัวหน้า/ฝ่ายบุคคลกดปุ่มสรุป (ตรงกับผู้ที่แก้ aiSuggestion ได้)
+        allow create: if isManagerOrHr();
+
+        // ประวัติแก้ไม่ได้ ลบไม่ได้ — เป็นบันทึกค้างอ้างอิง
+        allow update, delete: if false;
+      }
+    }
+
+    // ไม่มี catch-all rule ท้ายไฟล์ — Firestore ปฏิเสธ path ที่ไม่ตรงกับ match ใด ๆ โดยอัตโนมัติ
+  }
+}
