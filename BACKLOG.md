@@ -1,5 +1,15 @@
 # BACKLOG.md — เก็บไว้ทำ Sprint 2 (Module 3) ไม่ใช่ของ Module 2
 
+## 🔴 เหตุการณ์ด้านความปลอดภัย — ต้องติดตามผล
+
+- **27 ต.ค. 2569 — คีย์ OpenRouter หลุดขึ้น Firebase Hosting สาธารณะชั่วคราว** `firebase.json` เดิม
+  ไม่มี `js/ai-config.local.js` ใน `hosting.ignore` — `.gitignore` กันแค่ GitHub ไม่ได้กัน
+  `firebase deploy --only hosting` ซึ่งอัปโหลดจากไฟล์ในเครื่องตรง ๆ ทำให้คีย์จริงเปิดอ่านได้ที่
+  `https://leaveeasy-chonlatrid.web.app/js/ai-config.local.js` อยู่ช่วงหนึ่ง แก้แล้ว (เพิ่ม
+  `**/*.local.js` และไฟล์เอกสารภายในอื่น ๆ เข้า `hosting.ignore`) และ deploy ใหม่จนยืนยันว่าไฟล์
+  คืนค่า 404 แล้ว — **แจ้งผู้สอนให้เพิกถอน/ออกคีย์ใหม่ให้เสมอ** เพราะลบไฟล์ออกไม่ได้แปลว่าไม่มีใคร
+  คัดลอกคีย์ไปแล้วระหว่างที่หลุด
+
 ## ความปลอดภัย / สถาปัตยกรรม
 
 - **ย้ายคีย์ AI (OpenRouter) ไปไว้หลังตัวกลางฝั่งเซิร์ฟเวอร์** — ตอนนี้ `js/ai.js` เรียก OpenRouter
